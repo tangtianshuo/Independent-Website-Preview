@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Preview protocol harness</title></head>
+<body>
+<p id="status">Connecting</p>
+<iframe id="preview" style="width:100%;height:900px;border:0"></iframe>
+<script>
+const snapshot = {
+  schemaVersion: 1, workspaceId: 'harness-workspace', siteId: 'harness-site', language: 'en',
+  pages: [{
+    path: '/', pageKey: 'home', entryId: 'home-entry',
+    content: {
+      kind: 'preset-page', view: 'home', sections: ['hero', 'feature'],
+      preset: {
+        id: 'fireguard', version: '1.0.0', name: 'Harness', description: '',
+        theme: { background: '#f7f5f0', foreground: '#202322', accent: '#b92323', muted: '#e7e3dc', font: 'Arial, sans-serif' },
+        demo: {
+          brand: 'HARNESS FIRE', contactEmail: 'sales@example.com',
+          hero: { title: 'Unified preview works', subtitle: 'One service, versioned bundle.', image: '' },
+          product: { title: 'Extinguisher', price: '199', image: '', description: 'Safety equipment' },
+          collection: { title: 'Equipment', description: 'Safety catalog', image: '' },
+          page: { title: 'About', body: 'Company', image: '' }
+        },
+        showcase: {
+          eyebrow: 'HARNESS', heroLabel: 'VERSIONED PREVIEW',
+          stats: [{ value: '01', label: 'One service' }],
+          products: [], solutions: [],
+          faq: [{ question: 'Ready?', answer: 'Yes.' }]
+        }
+      },
+      seo: { title: 'Harness preview', description: '' }, items: []
+    }
+  }],
+  navigation: [{ label: 'Home', path: '/' }], redirects: []
+};
+const frame = document.querySelector('#preview');
+function deliver() {
+  frame.contentWindow.postMessage({ type: 'storefront:preview', payload: snapshot, path: '/' }, 'http://127.0.0.1:4310');
+  document.querySelector('#status').textContent = 'Snapshot delivered';
+}
+addEventListener('message', event => {
+  if (event.origin !== 'http://127.0.0.1:4310' || event.source !== frame.contentWindow ||
+      event.data?.type !== 'storefront:preview-ready' ||
+      event.data.templateId !== 'fireguard' || event.data.templateVersion !== '1.0.0') return;
+  deliver();
+});
+frame.addEventListener('load', () => setTimeout(deliver, 500));
+frame.src = 'http://127.0.0.1:4310/preview/fireguard/1.0.0/';
+</script>
+</body>
+</html>

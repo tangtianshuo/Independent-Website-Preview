@@ -1,0 +1,14 @@
+{
+  "name": "@bcms/independent-website-preview",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/registry.mjs && node --check src/handler.mjs && node --check src/server.mjs"
+  }
+}

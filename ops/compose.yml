@@ -1,0 +1,13 @@
+services:
+  preview:
+    image: ghcr.io/tangtianshuo/independent-website-preview:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4300:4300"
+    environment:
+      PREVIEW_REGISTRY_PATH: /data/registry/preview/index.json
+      PREVIEW_BUNDLES_ROOT: /data/bundles
+      PREVIEW_PUBLIC_ORIGIN: ${PREVIEW_PUBLIC_ORIGIN}
+      PREVIEW_ADMIN_ORIGIN: ${PREVIEW_ADMIN_ORIGIN}
+    volumes:
+      - /opt/novaintelligent/preview:/data:ro
