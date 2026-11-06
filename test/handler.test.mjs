@@ -21,11 +21,13 @@ async function fixture() {
     const registryPath = join(root, 'preview.json');
     const bundlesRoot = join(root, 'bundles');
     await mkdir(join(bundlesRoot, 'fireguard', '1.0.0', '_nuxt'), { recursive: true });
-    await writeFile(registryPath, JSON.stringify({ schemaVersion: 1, records: [record] }));
+
     const html = '<!doctype html><div id="preview"></div>';
     const script = 'console.log("preview")';
-    const manifest = { templateId: 'fireguard', templateVersion: '1.0.0', bundleDigest: record.bundleDigest, protocolVersion: 1,
-        files: [entry('index.html', html), entry('_nuxt/app.js', script)] };
+    const manifest = { schemaVersion:1, manifestChecksum:record.manifestChecksum, sourceCommit:record.sourceCommit, templateId: 'fireguard', templateVersion: '1.0.0', bundleDigest: record.bundleDigest, protocolVersion: 1,
+        files: [entry('_nuxt/app.js', script), entry('index.html', html)] };
+    record.bundleDigest = manifest.bundleDigest = digest(manifest.files);
+    await writeFile(registryPath, JSON.stringify({ schemaVersion: 1, records: [record] }));
     await writeFile(join(bundlesRoot, 'fireguard', '1.0.0', 'preview-bundle.json'), JSON.stringify(manifest));
     await writeFile(join(bundlesRoot, 'fireguard', '1.0.0', 'index.html'), html);
     await writeFile(join(bundlesRoot, 'fireguard', '1.0.0', '_nuxt', 'app.js'), script);
@@ -72,4 +74,24 @@ test('fails closed for unknown versions, traversal, bad registry and unexpected 
     assert.equal((await handler(new Request('https://preview.example.com/api/v1/renderers/fireguard/1.0.0', { method: 'POST' }))).status, 405);
     await writeFile(join(root, 'preview.json'), JSON.stringify({ schemaVersion: 1, records: [{ ...record, bundlePath: '../escape' }] }));
     assert.equal((await handler(new Request('https://preview.example.com/api/v1/renderers'))).status, 503);
+});
+
+test('reads authentic original schema1 format while rejecting partial or wrong provenance', async t => {
+    const { root, handler } = await fixture();
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const path = join(root,'bundles/fireguard/1.0.0/preview-bundle.json');
+    const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(path,'utf8'));
+    const legacy = { ...manifest }; delete legacy.sourceCommit; delete legacy.manifestChecksum;
+    await writeFile(path,JSON.stringify(legacy));
+    assert.equal((await handler(new Request('https://preview.example.com/preview/fireguard/1.0.0/'))).status,200);
+    for (const malformed of [
+        { ...legacy, sourceCommit: record.sourceCommit },
+        { ...legacy, manifestChecksum: record.manifestChecksum },
+        { ...manifest, sourceCommit: 'f'.repeat(40) },
+        { ...manifest, manifestChecksum: `sha256:${'f'.repeat(64)}` },
+        { ...legacy, bundleDigest: `sha256:${'f'.repeat(64)}` },
+    ]) {
+        await writeFile(path,JSON.stringify(malformed));
+        assert.equal((await handler(new Request('https://preview.example.com/preview/fireguard/1.0.0/'))).status,404);
+    }
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -15,7 +16,7 @@ function object(value) {
 }
 
 export function validPreviewRecord(value) {
-    if (!object(value) || Object.keys(value).some(key => !recordKeys.includes(key)) ||
+    if (!object(value) || !['id','version','manifestChecksum','sourceCommit','bundleDigest','artifactDigest','bundlePath','adapterVersion','status'].every(key => typeof value[key] === 'string') || Object.keys(value).some(key => !recordKeys.includes(key)) ||
         Object.keys(value).length !== recordKeys.length) return false;
     return idPattern.test(String(value.id || '')) &&
         versionPattern.test(String(value.version || '')) &&
@@ -70,4 +71,19 @@ export function publicPreviewDescriptor(record, publicOrigin) {
         digest: record.bundleDigest,
         url: `${publicOrigin}/preview/${record.id}/${record.version}/`,
     };
+}
+
+// The registry binds the content-addressed file list and exact source identity.
+export function validBundleManifest(manifest, record) {
+    if (manifest?.schemaVersion !== 1 || manifest.templateId !== record.id || manifest.templateVersion !== record.version ||
+        manifest.bundleDigest !== record.bundleDigest || manifest.protocolVersion !== record.protocolVersion || !Array.isArray(manifest.files)) return false;
+    // Old approved schema1 bundles carry provenance in the trusted registry.
+    // New-format provenance is all-or-nothing and must match that exact record.
+    if ((Object.hasOwn(manifest,'manifestChecksum') || Object.hasOwn(manifest,'sourceCommit')) &&
+        (manifest.manifestChecksum !== record.manifestChecksum || manifest.sourceCommit !== record.sourceCommit)) return false;
+    const paths = manifest.files.map(entry => entry?.path);
+    if (!paths.includes('index.html') || paths.some(path => typeof path !== 'string' || !path || path.includes('\\') || path === 'preview-bundle.json' || path.split('/').some(part => !part || part === '.' || part === '..')) ||
+        new Set(paths).size !== paths.length || JSON.stringify(paths) !== JSON.stringify([...paths].sort())) return false;
+    return manifest.files.every(entry => Object.keys(entry).length === 3 && Number.isSafeInteger(entry.size) && entry.size >= 0 && /^[a-f0-9]{64}$/.test(entry.checksum)) &&
+        `sha256:${createHash('sha256').update(JSON.stringify(manifest.files)).digest('hex')}` === record.bundleDigest;
 }

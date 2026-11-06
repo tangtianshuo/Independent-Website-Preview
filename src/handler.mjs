@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat, lstat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
-import { readPreviewRegistry, resolvePreviewRecord, publicPreviewDescriptor } from './registry.mjs';
+import { readPreviewRegistry, resolvePreviewRecord, publicPreviewDescriptor, validBundleManifest } from './registry.mjs';
 
 const mimeTypes = {
     '.css': 'text/css; charset=utf-8',
@@ -66,10 +66,16 @@ async function bundleFile(config, record, relative) {
     const file = resolve(root, record.id, record.version, relative);
     if (!file.startsWith(`${root}${sep}`)) return null;
     try {
+        let current = root;
+        for (const part of [record.id, record.version, ...relative.split('/')]) {
+            current = resolve(current, part);
+            if ((await lstat(current)).isSymbolicLink()) return null;
+        }
+        if ((await lstat(resolve(root,record.id,record.version,'preview-bundle.json'))).isSymbolicLink()) return null;
         const physical = await realpath(file);
         if (!physical.startsWith(`${root}${sep}`)) return null;
         const metadata = await stat(file);
-        if (!metadata.isFile()) return null;
+        if (!metadata.isFile() || metadata.nlink !== 1) return null;
         const bytes = await readFile(file);
         const manifestPath = await realpath(resolve(root, record.id, record.version, 'preview-bundle.json')).catch(() => null);
         if (!manifestPath || !manifestPath.startsWith(`${root}${sep}`)) return null;
@@ -78,9 +84,7 @@ async function bundleFile(config, record, relative) {
         let manifest;
         try { manifest = JSON.parse(manifestBytes.toString('utf8')); }
         catch { return null; }
-        if (manifest?.templateId !== record.id || manifest?.templateVersion !== record.version ||
-            manifest?.bundleDigest !== record.bundleDigest || manifest?.protocolVersion !== 1 ||
-            !Array.isArray(manifest.files)) return null;
+        if (!validBundleManifest(manifest, record)) return null;
         if (relative !== 'preview-bundle.json') {
             const expected = manifest.files.find(entry => entry?.path === relative);
             const checksum = createHash('sha256').update(bytes).digest('hex');

@@ -1,36 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-template_id=${1:?template id is required}
-template_version=${2:?template version is required}
-artifact_digest=${3:?OCI artifact digest is required}
+# The approved record is supplied separately from the OCI download. Do not derive
+# trust from the downloaded archive or expose registry visibility before install.
+record_path=${1:?approved preview registry record JSON path is required}
 bundles_root=${PREVIEW_BUNDLES_ROOT:?PREVIEW_BUNDLES_ROOT is required}
-
-[[ "$template_id" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
-[[ "$template_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-[[ "$artifact_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-
-directory=$(mktemp -d)
-trap 'rm -rf "$directory"' EXIT
-repository="ghcr.io/tangtianshuo/independent-website-preview-bundles/${template_id}"
-oras pull "${repository}@${artifact_digest}" --output "$directory"
-mkdir "$directory/bundle"
-tar -xzf "$directory/preview-bundle.tar.gz" -C "$directory/bundle"
-
-node --input-type=module - "$directory/bundle/preview-bundle.json" "$template_id" "$template_version" <<'NODE'
+: "${PREVIEW_REGISTRY_PATH:?PREVIEW_REGISTRY_PATH is required}"
+script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+identity=$(node --input-type=module - "$record_path" "$script_directory" <<'NODE'
 import { readFile } from 'node:fs/promises';
-const [path, id, version] = process.argv.slice(2);
-const value = JSON.parse(await readFile(path, 'utf8'));
-if (value.templateId !== id || value.templateVersion !== version || value.protocolVersion !== 1 ||
-    !/^sha256:[a-f0-9]{64}$/.test(value.bundleDigest || '')) {
-  throw new Error('Preview bundle identity is invalid');
-}
+import { pathToFileURL } from 'node:url';
+const [path, directory] = process.argv.slice(2);
+const { validPreviewRecord } = await import(pathToFileURL(`${directory}/../src/registry.mjs`));
+const record = JSON.parse(await readFile(path, 'utf8'));
+if (!validPreviewRecord(record)) throw new Error('Invalid approved preview record');
+console.log(`${record.id}@${record.artifactDigest}`);
 NODE
-
-target="${bundles_root}/${template_id}/${template_version}"
-if [[ -e "$target" ]]; then
-  echo "Preview bundle target already exists: $target" >&2
-  exit 1
-fi
-mkdir -p "$(dirname "$target")"
-mv "$directory/bundle" "$target"
+)
+mkdir -p "$bundles_root"
+directory=$(mktemp -d "$bundles_root/.download-XXXXXX")
+trap 'rm -rf -- "$directory"' EXIT
+mkdir "$directory/archive" "$directory/bundle"
+repository="ghcr.io/tangtianshuo/independent-website-preview-bundles/${identity%%@*}"
+oras pull "${repository}@${identity#*@}" --output "$directory/archive"
+node "$script_directory/install-bundle.mjs" "$directory/archive/preview-bundle.tar.gz" "$directory/bundle" "$record_path"
