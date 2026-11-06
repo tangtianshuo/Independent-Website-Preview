@@ -31,5 +31,25 @@ the immutable OCI artifact; `bundleDigest` validates the unpacked files. Registr
 atomic, and a bundle must contain `preview-bundle.json` with matching template identity and
 digest before it can be served.
 
-Use `ops/sync-bundle.sh TEMPLATE_ID VERSION OCI_DIGEST` on the deployment host to pull and
-install one approved artifact. It refuses to overwrite an existing template version.
+On the deployment host, provide one approved registry record as a JSON object from the
+trusted release checkout, separately from the downloaded artifact:
+
+```sh
+PREVIEW_REGISTRY_PATH=/path/to/local/preview/index.json \
+PREVIEW_BUNDLES_ROOT=/path/to/bundles \
+ops/sync-bundle.sh /path/to/approved-record.json
+```
+
+The command pulls the exact `artifactDigest`, rejects unsafe archives and links, verifies
+all file sizes/checksums plus the bundle digest and source/manifest identity, and installs
+into the target filesystem. Existing identical state is unchanged; conflicting versions
+are never replaced. The installer serializes directory installation and registry updates.
+It renames a complete verified directory first, then atomically renames the registry file.
+A process interruption between those phases may leave an unreferenced verified directory;
+a retry validates it again before registering it. This is recoverable two-phase visibility,
+not a single atomic rename spanning the bundle directory and registry.
+
+New installations require `sourceCommit` and `manifestChecksum` inside the bundle manifest.
+Already approved original schema-1 bundles remain readable with their exact trusted registry
+identity, canonical file-list digest and per-file verification. A partially supplied or
+mismatching provenance pair is rejected; old immutable bundles are never rewritten.
