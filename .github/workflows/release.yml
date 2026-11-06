@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - 'release/v*'
+      - "release/v*"
   pull_request:
     branches:
       - main
@@ -23,9 +23,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '22'
+          node-version: "22"
       - run: npm test
       - run: npm run check
+      - name: Validate deployment compose
+        env:
+          PREVIEW_IMAGE: ghcr.io/tangtianshuo/independent-website-preview:sha-${{ github.sha }}
+          PREVIEW_PUBLIC_ORIGIN: https://preview.example.com
+          PREVIEW_ADMIN_ORIGIN: https://cms.example.com
+          PREVIEW_APPROVED_ROOT: /opt/novaintelligent/preview
+        run: docker compose -f ops/preview.compose.yml config --quiet
 
   publish:
     if: startsWith(github.ref, 'refs/heads/release/v')
@@ -54,3 +61,9 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      - name: Record immutable deployment image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "Approved deployment requires the matching registry/bundles and platform lock." >> "$GITHUB_STEP_SUMMARY"
+          echo "PREVIEW_IMAGE=${IMAGE}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"

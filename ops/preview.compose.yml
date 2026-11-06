@@ -1,0 +1,34 @@
+# Render with: docker compose --env-file /private/preview.env -f ops/preview.compose.yml config
+# PREVIEW_IMAGE must be the approved image@sha256 digest from the release lock.
+services:
+  preview:
+    image: ${PREVIEW_IMAGE:?Set the approved Preview image@sha256 digest}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "127.0.0.1:4300:4300"
+    environment:
+      PREVIEW_HOST: 0.0.0.0
+      PREVIEW_PORT: 4300
+      PREVIEW_REGISTRY_PATH: /data/registry/preview/index.json
+      PREVIEW_BUNDLES_ROOT: /data/bundles
+      PREVIEW_PUBLIC_ORIGIN: ${PREVIEW_PUBLIC_ORIGIN:?Set the exact public Preview origin}
+      PREVIEW_ADMIN_ORIGIN: ${PREVIEW_ADMIN_ORIGIN:?Set the exact CMS origin compiled into bundles}
+    volumes:
+      - type: bind
+        source: ${PREVIEW_APPROVED_ROOT:?Set the installed approved registry and bundle root}
+        target: /data
+        read_only: true
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4300/health-check').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
